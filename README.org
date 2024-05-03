@@ -1,0 +1,66 @@
+#+title: defile.el - Embed IDs and tags in file names
+#+author: Nick OBrien
+
+Defile is a simple package for embedding IDs and tags in file names.
+File names are formatted as follows, with =[]= indicating optional
+fields:
+
+#+begin_example
+[ID--]TITLE[__TAG1_TAG2][.EXT]
+#+end_example
+
+The main benefits of this format are:
+
+- An alternative to a directory hierarchy.  In many cases, it doesn't
+  make sense to distinguish =tag1/tag2/file= from =tag2/tag1/file=.
+
+- An unchanging ID for links, currently used by the "defile" Org link
+  format.
+
+Some unfortunate downsides are:
+
+- File name lengths are limited, which also limits the amount of tags
+  you can add.
+
+- With a lot of tags, the file name becomes an eye-sore.
+
+The main features Defile provides are:
+
+- Renaming files with special completion (=defile-rename-file=,
+  =defile-dired-do-rename=)
+
+- An Org link format "defile" (accessible from =org-store-link= and
+  =org-insert-link=)
+
+Defile was largely inspired by [[https://protesilaos.com/emacs/denote][Denote]].  By default, Defile uses a
+superset of Denote's file name format.  If you include
+=denote-directory= in your =defile-lookup-path=, your Denote notes
+will be included as Defile files.  The main reason you might use
+Defile in addition to Denote is for a less restrictive naming scheme.
+
+|           | Defile              | Denote                               |
+|-----------+---------------------+--------------------------------------|
+| ID        | cannot contain ~--~ | ISO 8601 timestamp                   |
+| Title     | anything            | cannot contain ~==~, ~__~, ~--~, ~.~ |
+| Tags      | cannot contain ~_~  | cannot contain ~==~, ~__~, ~--~, ~.~ |
+
+The downside with the lessened restrictions are that precise searches
+with general tools are harder.  For example, searching a file name
+with ~_foo~ only matches tags in Denote, but may match the title in
+Defile.  If this bothers you, don't use titles that contain ~_~.
+
+* Installation
+
+Using [[https://github.com/progfolio/elpaca][elpaca]] and =elpaca-use-package-mode=:
+
+#+begin_src emacs-lisp :results none
+(use-package defile
+  :ensure ( defile :type git :host github
+	    :repo "nick4f42/defile.el" :depth nil)
+  :init
+  (with-eval-after-load 'dired
+    (add-hook 'dired-mode-hook #'defile-dired-mode))
+
+  :config
+  (setopt defile-lookup-path '("~/Documents")))
+#+end_src

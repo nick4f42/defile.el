@@ -206,22 +206,23 @@ FILENAME must be returned by `file-name-nondirectory'."
 
 (defun defile-join (id title tags ext)
   "Combine the parts into a file name."
-  (replace-regexp-in-string
-   (rx (any "/" "\n" cntrl))
-   ""
-   (apply
-    #'concat
-    `(,@(if (not (string-empty-p id))
-	    (list id defile-id-end))
-      ,title
-      ,@(if (or tags
-		(string-match-p (regexp-quote defile-tags-start) title))
-	    (list defile-tags-start))
-      ,@(let ((s (string-join tags defile-tags-separator)))
-	  (if (string-match-p (rx (regexp defile-extension-regexp) eos) s)
-	      (list s defile-tags-separator)
-	    (list s)))
-      ,ext))))
+  (let ((tags (defile-normalize-tags tags)))
+    (replace-regexp-in-string
+     (rx (any "/" "\n" cntrl))
+     ""
+     (apply
+      #'concat
+      `(,@(if (not (string-empty-p id))
+	      (list id defile-id-end))
+	,title
+	,@(if (or tags
+		  (string-match-p (regexp-quote defile-tags-start) title))
+	      (list defile-tags-start))
+	,@(let ((s (string-join tags defile-tags-separator)))
+	    (if (string-match-p (rx (regexp defile-extension-regexp) eos) s)
+		(list s defile-tags-separator)
+	      (list s)))
+	,ext)))))
 
 (defun defile-lookup (id &optional filters)
   "Return a Defile file given its ID.
@@ -296,12 +297,11 @@ ID, TITLE, TAGS, and EXT may be `prompt' to prompt the user,
 			      nil nil prev-title))
 		((pred stringp) title)
 		(_ "")))
-       (tags (defile-normalize-tags
-	      (pcase tags
-		('keep prev-tags)
-		('prompt (defile-read-tags (format "%s Tags: "  msg) prev-tags))
-		((pred listp) tags)
-		(_ '()))))
+       (tags (pcase tags
+	       ('keep prev-tags)
+	       ('prompt (defile-read-tags (format "%s Tags: "  msg) prev-tags))
+	       ((pred listp) tags)
+	       (_ '())))
        (ext (pcase ext
 	      ('keep prev-ext)
 	      ('prompt

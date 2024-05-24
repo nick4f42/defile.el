@@ -100,7 +100,9 @@
     (should (equal (defile-join "" "title__not tag!" '() ".ext")
 		   "title__not tag!__.ext"))
     (should (equal (defile-join "no\n" "bad/" '("chars\0") ".ext")
-		   "no--bad__chars.ext"))))
+		   "no--bad__chars.ext"))
+    (should (equal (defile-join "" "sort tags pls" '("B" "A") "")
+		   "sort tags pls__A_B"))))
 
 (ert-deftest defile-lookup ()
   (defile--with-defaults

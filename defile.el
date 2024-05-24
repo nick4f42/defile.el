@@ -266,15 +266,26 @@ Files are searched for in `defile-lookup-path'."
 		   (* anychar) (literal defile-tags-start))))
     (hash-table-keys all-tags)))
 
-(defun defile-read-tags (prompt &optional initial-tags)
+(defun defile-read-tag (prompt &optional initial-tag all-tags)
+  "Read a Defile tag with completion.
+PROMPT is the same as the `completing-read' argument.
+INITIAL-TAG is INITIAL-INPUT.  ALL-TAGS is the list of tags to
+read from, or (defile-tags) by default."
+  (dlet ((completion-extra-properties
+	  (list :annotation-function #'defile--tag-annotation-function)))
+    (completing-read
+     prompt (or all-tags (defile-tags)) nil nil initial-tag)))
+
+(defun defile-read-tags (prompt &optional initial-tags all-tags)
   "Read a list of Defile tags with completion.
-PROMPT is the `completing-read-multiple' prompt.  INITIAL-TAGS
-are put in the minibuffer as initial input."
+Arguments are equivalent to `defile-read-tag', except
+INITIAL-TAGS is a list of tags to insert separated by
+`defile-tags-separator'."
   (dlet ((crm-separator (regexp-quote defile-tags-separator))
 	 (completion-extra-properties
 	  (list :annotation-function #'defile--tag-annotation-function)))
     (completing-read-multiple
-     prompt (defile-tags) nil nil
+     prompt (or all-tags (defile-tags)) nil nil
      (string-join initial-tags defile-tags-separator))))
 
 (defun defile-new-file-name (file id title tags ext)
@@ -537,6 +548,81 @@ SOURCE is for internal use, do not specify it."
 	(when tag
 	  (push (cons tag desc) tags))))
     (nreverse tags)))
+
+(defun defile-rename-tags (tag-replacements &optional no-prompt)
+  "Rename tags of files in the Defile lookup path.
+Also renames tags in `defile-tag-file'.  TAG-REPLACEMENTS is a
+list of (OLD-TAG . NEW-TAG).  Interactively, prompt for OLD-TAG
+and NEW-TAG."
+  (interactive
+   (let* ((all-tags (defile-tags))
+	  (tag-replacements
+	   (cl-loop for old-tag in (defile-read-tags "Tags to rename: " nil all-tags)
+		    for new-tag = (defile-read-tag
+				   (format "Rename %S to: " old-tag) old-tag all-tags)
+		    if (not (equal old-tag new-tag))
+		    do (when (member new-tag all-tags)
+			 (or (y-or-n-p (format "Tag %S already exists, continue?" new-tag))
+			     (user-error "Tag already exists")))
+		    and collect (cons old-tag new-tag))))
+     (list tag-replacements)))
+  (defile--rename-tags-in-tags-file tag-replacements)
+  (defile--rename-tags-in-file-names tag-replacements no-prompt))
+
+(defun defile--rename-tags-in-tags-file (tag-replacements)
+  (when defile-tag-file
+    (cl-block nil
+      (with-temp-file defile-tag-file
+	(insert-file-contents defile-tag-file)
+	(let ((case-fold-search nil)
+	      (save nil))
+	  (pcase-dolist (`(,old-tag . ,new-tag) tag-replacements)
+	    (goto-char (point-min))
+	    (when (search-forward-regexp
+		   (rx bol (group (literal old-tag)) (or (literal defile-tags-start) eol))
+		   nil t)
+	      (replace-match new-tag t t nil 1)
+	      (setq save t)))
+	  (unless save
+	    (cl-return)))))))
+
+(defun defile--rename-tags-in-file-names (tag-replacements &optional no-prompt)
+  (let ((from-tags (mapcar #'car tag-replacements)))
+    (cl-block file-loop
+      (funcall
+       defile-candidates
+       (lambda (file)
+	 (seq-let (id title tags ext) (defile-split (file-name-nondirectory file))
+	   (when (seq-some (lambda (tag) (member tag tags)) from-tags)
+	     (let* ((new-tags
+		     (mapcar (lambda (tag)
+			       (or (cdr (assoc tag tag-replacements))
+				   tag))
+			     tags))
+		    (new-name (defile-join id title new-tags ext))
+		    (new-file (expand-file-name new-name (file-name-directory file)))
+		    (read-answer-short t))
+	       (cl-block prompt-loop
+		 (while t
+		   (pcase (if no-prompt
+			      "yes"
+			    (read-answer (format "Rename %S to %S " file new-name)
+					 '(("yes" ?y "rename this file")
+					   ("no" ?n "skip this file")
+					   ("all"  ?! "rename this file and all remaining files")
+					   ("help" ?h "show this message")
+					   ("quit" ?q "exit"))))
+		     ("yes"
+		      (defile--rename-file file new-file)
+		      (cl-return-from prompt-loop))
+		     ("no"
+		      (cl-return-from prompt-loop))
+		     ("all"
+		      (setq no-prompt t))
+		     ("quit"
+		      (cl-return-from file-loop)))))))))
+       (rx bos (regexp defile-id-regexp) (literal defile-id-end)
+	   (* anychar) (literal defile-tags-start))))))
 
 ;;;; Dired integration
 

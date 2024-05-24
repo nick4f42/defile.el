@@ -27,27 +27,27 @@ Some unfortunate downsides are:
 The main features Defile provides are:
 
 - Renaming files with special completion (=defile-rename-file=,
-  =defile-dired-do-rename=)
+  =defile-dired-do-rename=).
+
+- A file for adding descriptions to tags, which are shown when
+  completing a tag (=defile-tag-file=).
+
+- Renaming a tag, which renames all files with that tag
+  (=defile-rename-tags=).
 
 - An Org link format "defile" (accessible from =org-store-link= and
-  =org-insert-link=)
+  =org-insert-link=).
 
-Defile was largely inspired by [[https://protesilaos.com/emacs/denote][Denote]].  By default, Defile uses a
-superset of Denote's file name format.  If you include
-=denote-directory= in your =defile-lookup-path=, your Denote notes
-will be included as Defile files.  The main reason you might use
-Defile in addition to Denote is for a less restrictive naming scheme.
+* Denote
 
-|           | Defile              | Denote                               |
-|-----------+---------------------+--------------------------------------|
-| ID        | cannot contain ~--~ | ISO 8601 timestamp                   |
-| Title     | anything            | cannot contain ~==~, ~__~, ~--~, ~.~ |
-| Tags      | cannot contain ~_~  | cannot contain ~==~, ~__~, ~--~, ~.~ |
-
-The downside with the lessened restrictions are that precise searches
-with general tools are harder.  For example, searching a file name
-with ~_foo~ only matches tags in Denote, but may match the title in
-Defile.  If this bothers you, don't use titles that contain ~_~.
+Defile was largely inspired by [[https://protesilaos.com/emacs/denote][Denote]].  If you already have Denote,
+then you probably won't gain much from Defile unless you want
+arbitrary IDs (Denote only allows ISO 8601 timestamps as IDs).  If you
+decide to use both, Defile works perfectly fine on top of Denote.  By
+default, Defile uses a superset of Denote's file name format.  If you
+include =denote-directory= in your =defile-lookup-path=, your Denote
+notes will be included as Defile files.  For example, Defile tag
+completions will include Denote tags.
 
 * Installation
 

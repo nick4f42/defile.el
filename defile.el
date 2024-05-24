@@ -140,6 +140,11 @@ The description is used as an annotation when completing tags.
 See also `defile-populate-tag-file'."
   :type '(choice (const nil) file))
 
+(defcustom defile-vc-rename-file nil
+  "Defile equivalent of `dired-vc-rename-file'."
+  :type '(choice (const :tag "Use rename-file" nil)
+                 (const :tag "Use vc-rename-file" t)))
+
 (defgroup defile-faces nil
   "Faces for Defile."
   :group 'defile
@@ -329,7 +334,25 @@ exists."
 	 (new-file (defile-new-file-name file id 'prompt 'prompt 'keep)))
     (when (y-or-n-p (format "Rename %s to %s? "
 			    (file-name-nondirectory file) (file-name-nondirectory new-file)))
-      (rename-file file new-file))))
+      (defile--rename-file file new-file))))
+
+(defun defile--rename-file (file newname &optional ok-if-already-exists)
+  ;; Taken from `dired-rename-file'
+  (if (and defile-vc-rename-file
+           (vc-backend file)
+           (ignore-errors (vc-responsible-backend newname)))
+      (let* ((file (expand-file-name file))
+	     (newname (expand-file-name newname))
+	     ;; Make sure the current VC root is file's VC root.
+	     (default-directory (or (file-name-directory file)
+				    (error "No directory"))))
+	(vc-rename-file file newname))
+    ;; error is caught in -create-files
+    (rename-file file newname ok-if-already-exists))
+  ;; Silently rename the visited file of any buffer visiting this file.
+  (and (get-file-buffer file)
+       (with-current-buffer (get-file-buffer file)
+	 (set-visited-file-name newname nil t))))
 
 (defun defile--id-files ()
   "Returns a list of files with a Defile ID."

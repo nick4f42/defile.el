@@ -43,6 +43,7 @@
 
 ;;; Code:
 
+(require 'subr-x)
 (eval-when-compile
   (require 'cl-lib))
 
@@ -121,6 +122,23 @@ duplicate IDs.  It should either return nil to continue
 processing, or a smaller list of files.  Each filter is run in
 turn until there is only one file remaining."
   :type '(repeat function))
+
+(defcustom defile-find-tags t
+  "Search `defile-lookup-path' for tags when prompting for tags.
+If nil, tags are still taken from `defile-tag-file'.  See also
+`defile-populate-tag-file'."
+  :type 'boolean)
+
+(defcustom defile-tag-file nil
+  "File to store tag names and descriptions in.
+Each line in the file starts with a tag.  It can optionally be
+followed with `defile-tags-start', then a description of the tag.
+The tags in this file are used for completion, along with tags
+already in Defile file names if `defile-find-tags' is enabled.
+The description is used as an annotation when completing tags.
+
+See also `defile-populate-tag-file'."
+  :type '(choice (const nil) file))
 
 (defgroup defile-faces nil
   "Faces for Defile."
@@ -229,16 +247,29 @@ Files are searched for in `defile-lookup-path'."
 
 (defun defile-tags ()
   "Return a list of known tags in `defile-lookup-path'."
-  (let ((all-tags nil))
-    (funcall defile-candidates
-	     (lambda (file)
-	       (seq-let (_id _title tags _ext) (defile-split (file-name-nondirectory file))
-		 (dolist (tag tags)
-		   (unless (seq-contains-p all-tags tag)
-		     (push tag all-tags)))))
-	     (rx bos (regexp defile-id-regexp) (literal defile-id-end)
-		 (* anychar) (literal defile-tags-start)))
-    all-tags))
+  (let ((all-tags (make-hash-table :test #'equal)))
+    (pcase-dolist (`(,tag . ,desc) (defile--read-tag-file))
+      (puthash (propertize tag 'defile-desc desc) t all-tags))
+    (when defile-find-tags
+      (funcall defile-candidates
+	       (lambda (file)
+		 (seq-let (_id _title tags _ext) (defile-split (file-name-nondirectory file))
+		   (dolist (tag tags)
+		     (puthash tag t all-tags))))
+	       (rx bos (regexp defile-id-regexp) (literal defile-id-end)
+		   (* anychar) (literal defile-tags-start))))
+    (hash-table-keys all-tags)))
+
+(defun defile-read-tags (prompt &optional initial-tags)
+  "Read a list of Defile tags with completion.
+PROMPT is the `completing-read-multiple' prompt.  INITIAL-TAGS
+are put in the minibuffer as initial input."
+  (dlet ((crm-separator (regexp-quote defile-tags-separator))
+	 (completion-extra-properties
+	  (list :annotation-function #'defile--tag-annotation-function)))
+    (completing-read-multiple
+     prompt (defile-tags) nil nil
+     (string-join initial-tags defile-tags-separator))))
 
 (defun defile-new-file-name (file id title tags ext)
   "Change parts of FILE, possibly with user input.
@@ -268,11 +299,7 @@ ID, TITLE, TAGS, and EXT may be `prompt' to prompt the user,
        (tags (defile-normalize-tags
 	      (pcase tags
 		('keep prev-tags)
-		('prompt
-		 (dlet ((crm-separator (regexp-quote defile-tags-separator)))
-		   (completing-read-multiple
-		    (format "%s Tags: "  msg) (defile-tags) nil nil
-		    (string-join prev-tags defile-tags-separator))))
+		('prompt (defile-read-tags (format "%s Tags: "  msg) prev-tags))
 		((pred listp) tags)
 		(_ '()))))
        (ext (pcase ext
@@ -413,6 +440,80 @@ SOURCE is for internal use, do not specify it."
   (list
    (completing-read
     "Duplicate IDs exist.  Choose one: " files nil t)))
+
+;;;;; Tags
+
+(defun defile-populate-tag-file ()
+  "Add tags found in `defile-lookup-path' to `defile-tag-file'."
+  (interactive)
+  (or defile-tag-file
+      (user-error "`defile-tag-file' is nil"))
+  (with-current-buffer (find-file-noselect defile-tag-file)
+    (let ((tags (defile-normalize-tags
+		 (seq-filter
+		  (lambda (tag)
+		    (save-excursion
+		      (goto-char (point-min))
+		      (not (let ((case-fold-search nil))
+			     (search-forward-regexp
+			      (rx bol (literal tag) (or (literal defile-tags-start) eol))
+			      nil t)))))
+		  (defile--find-tags)))))
+      (if (not tags)
+	  (message "No new tags found")
+	(goto-char (point-max))
+	(unless (or (bobp) (eq (char-before) ?\n))
+	  (insert "\n"))
+	(dolist (tag tags)
+	  (insert tag defile-tags-start "\n"))
+	(message "Added %d tags" (length tags))))
+    (pop-to-buffer (current-buffer))))
+
+(defun defile--find-tags ()
+  (let ((all-tags (make-hash-table :test #'equal)))
+    (funcall defile-candidates
+	     (lambda (file)
+	       (seq-let (_id _title tags _ext) (defile-split (file-name-nondirectory file))
+		 (dolist (tag tags)
+		   (puthash tag t all-tags))))
+	     (rx bos (regexp defile-id-regexp) (literal defile-id-end)
+		 (* anychar) (literal defile-tags-start)))
+    (hash-table-keys all-tags)))
+
+(defun defile--tag-annotation-function (tag)
+  (when-let ((desc (get-text-property 0 'defile-desc tag)))
+    (concat " " desc)))
+
+(defvar defile--cached-tag-file nil)
+(defvar defile--cached-tags nil)
+
+(defun defile--read-tag-file ()
+  (when defile-tag-file
+    (if (and (equal defile--cached-tag-file defile-tag-file)
+	     (not (file-has-changed-p defile-tag-file 'defile--read-tag-file)))
+	defile--cached-tags
+      (let ((tags (with-temp-buffer
+		    (insert-file-contents defile-tag-file)
+		    (defile--read-tag-buffer))))
+	(setq defile--cached-tag-file defile-tag-file
+	      defile--cached-tags tags)
+	tags))))
+
+(defun defile--read-tag-buffer ()
+  (let (tags)
+    (goto-char (point-min))
+    (while (search-forward-regexp
+	    (rx bol
+		(group (+? nonl))
+		(? (literal defile-tags-start)
+		   (group (* nonl)))
+		eol)
+	    nil t)
+      (let ((tag (match-string 1))
+	    (desc (match-string 2)))
+	(when tag
+	  (push (cons tag desc) tags))))
+    (nreverse tags)))
 
 ;;;; Dired integration
 

@@ -37,7 +37,9 @@
 	 (defile-extension-regexp (rx (+ "." (+ alnum))))
 	 (defile-new-id-function nil)
 	 (defile-id-regexp (rx (* anychar)))
-	 (defile-lookup-duplicate-filters nil))
+	 (defile-lookup-duplicate-filters nil)
+	 (defile-find-tags t)
+	 (defile-tag-file nil))
      ,@body))
 
 (defun defile--candidates (files)
@@ -200,6 +202,22 @@
 		 [#xde #xad #xbe #xef]))
   (should (equal (vconcat (defile--hex-string-to-bytes ""))
 		 [])))
+
+(ert-deftest defile--read-tag-buffer ()
+  (with-temp-buffer
+    (insert "\n"
+	    "tag1__desc_1__foo\n"
+	    "tag2__desc2\n"
+	    "\n"
+	    "tag3__\n"
+	    "tag4\n"
+	    "tag5__desc 5")
+    (should (equal (defile--read-tag-buffer)
+		   '(("tag1" . "desc_1__foo")
+		     ("tag2" . "desc2")
+		     ("tag3" . "")
+		     ("tag4" . nil)
+		     ("tag5" . "desc 5"))))))
 
 (provide 'defile-tests)
 ;;; defile-tests.el ends here

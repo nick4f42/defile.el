@@ -140,8 +140,21 @@
 
 (ert-deftest defile-new-file-name ()
   (defile--with-defaults
-    (should (equal (defile-new-file-name "old.txt" "new-id" "title" '("t1" "t2") ".ext")
-		   "new-id--title__t1_t2.ext"))))
+   (should
+    (equal (defile-new-file-name "old.txt" "new-id" "title" '("t1" "t2") ".ext")
+	   "new-id--title__t1_t2.ext"))
+   (should
+    (equal (defile-new-file-name "oldid--oldtitle__oldtag.txt" "newid" 'keep 'keep 'keep)
+	   "newid--oldtitle__oldtag.txt"))
+   (should
+    (equal (defile-new-file-name "oldid--oldtitle__oldtag.txt" 'keep "newtitle" 'keep 'keep)
+	   "oldid--newtitle__oldtag.txt"))
+   (should
+    (equal (defile-new-file-name "oldid--oldtitle__oldtag.txt" 'keep 'keep '("newtag") 'keep)
+	   "oldid--oldtitle__newtag.txt"))
+   (should
+    (equal (defile-new-file-name "oldid--oldtitle__oldtag.txt" 'keep 'keep 'keep ".org")
+	   "oldid--oldtitle__oldtag.org"))))
 
 (ert-deftest defile-new-id ()
   (defile--with-defaults

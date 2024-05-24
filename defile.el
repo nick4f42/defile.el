@@ -240,30 +240,51 @@ Files are searched for in `defile-lookup-path'."
 		 (* anychar) (literal defile-tags-start)))
     all-tags))
 
-(defun defile-new-file-name (file &optional id title tags ext)
-  "Change parts of FILE, possibly with user input."
-  (pcase-let* ((dir (file-name-directory file))
-	       (name (file-name-nondirectory file))
-	       ((seq prev-id prev-title prev-tags prev-ext) (defile-split name))
-	       (msg (format "Renaming %s:" name)))
-    (setq id (or id
-		 (if (not (string-empty-p prev-id))
-		     prev-id)
-		 (if (y-or-n-p (format "%s Generate ID? " msg))
-		     (defile-new-id))
-		 ""))
-    (setq title
-	  (or title
-	      (let ((default (if (not (string-empty-p prev-title))
-				 prev-title)))
-		(read-string (format-prompt "%s Title" default msg) nil nil default))))
-    (setq tags (defile-normalize-tags
-		(or tags
-		    (dlet ((crm-separator (regexp-quote defile-tags-separator)))
-		      (completing-read-multiple
-		       (format "%s Tags: "  msg) (defile-tags) nil nil
-		       (string-join prev-tags defile-tags-separator))))))
-    (setq ext (or ext prev-ext ""))
+(defun defile-new-file-name (file id title tags ext)
+  "Change parts of FILE, possibly with user input.
+
+ID, TITLE, TAGS, and EXT may be `prompt' to prompt the user,
+`keep' to keep the old value, or the new value."
+  (pcase-let*
+      ((dir (file-name-directory file))
+       (name (file-name-nondirectory file))
+       ((seq prev-id prev-title prev-tags prev-ext) (defile-split name))
+       (msg (format "Renaming %s:" name))
+       (id (pcase id
+	     ('keep prev-id)
+	     ('prompt
+	      (if (y-or-n-p (format "%s Generate ID? " msg))
+		  (defile-new-id)
+		""))
+	     ((pred stringp) id)
+	     (_ "")))
+       (title (pcase title
+		('keep prev-title)
+		('prompt
+		 (read-string (format-prompt "%s Title" prev-title msg)
+			      nil nil prev-title))
+		((pred stringp) title)
+		(_ "")))
+       (tags (defile-normalize-tags
+	      (pcase tags
+		('keep prev-tags)
+		('prompt
+		 (dlet ((crm-separator (regexp-quote defile-tags-separator)))
+		   (completing-read-multiple
+		    (format "%s Tags: "  msg) (defile-tags) nil nil
+		    (string-join prev-tags defile-tags-separator))))
+		((pred listp) tags)
+		(_ '()))))
+       (ext (pcase ext
+	      ('keep prev-ext)
+	      ('prompt
+	       (let ((new-ext (read-string (format-prompt "%s Extension" prev-ext msg)
+					   nil nil prev-ext)))
+		 (if (string-prefix-p "." new-ext)
+		     new-ext
+		   (concat "." new-ext))))
+	      ((pred stringp) ext)
+	      (_ ""))))
     (file-name-concat dir (defile-join id title tags ext))))
 
 (defun defile-normalize-tags (tags)
@@ -277,8 +298,8 @@ When NEW-ID is non-nil (prefix argument interactively), generate
 a new ID for the file.  This replaces the previous ID if one
 exists."
   (interactive "fRename file: \nP")
-  (let* ((id (if new-id (defile-new-id)))
-	 (new-file (funcall #'defile-new-file-name file id)))
+  (let* ((id (if new-id 'prompt 'keep))
+	 (new-file (defile-new-file-name file id 'prompt 'prompt 'keep)))
     (when (y-or-n-p (format "Rename %s to %s? "
 			    (file-name-nondirectory file) (file-name-nondirectory new-file)))
       (rename-file file new-file))))
@@ -474,7 +495,10 @@ ARG has the same meaning as `dired-do-rename'."
                     files)
       (user-error "Can't rename \".\" or \"..\" files"))
     (dired-create-files
-     #'dired-rename-file "Move" files #'defile-new-file-name ?R)))
+     #'dired-rename-file "Move" files
+     (lambda (file)
+       (defile-new-file-name file 'keep 'prompt 'prompt 'keep))
+     ?R)))
 
 ;;;; Org integration
 
